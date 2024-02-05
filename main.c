@@ -1,3 +1,4 @@
+#include "quadtree.h"
 #include <raylib.h>
 #include <raymath.h>
 #include <stdio.h>
@@ -5,8 +6,8 @@
 
 const int POPULATION = 100;
 
-const int SCREEN_WIDTH = 200;
-const int SCREEN_HEIGHT = 200;
+const int SCREEN_WIDTH = 1000;
+const int SCREEN_HEIGHT = 1000;
 const int SUB_STEPS = 30;
 const int MAX_VELOCITY = 100;
 const int MAX_TREE_DEPTH = 10;
@@ -18,108 +19,7 @@ typedef struct Particles {
   float *mass;
   float *radius;
   Color *color;
-
 } Particles;
-
-typedef struct quadElement {
-  int idx;            // Used to look up particle information
-  int x1, y1, x2, y2; // Rectangle for the element
-} quad_element_t;
-
-typedef struct quadElNode {
-  int next;    // points to the next element
-  int element; // points to an element
-} quad_element_node_t;
-
-typedef struct quadNode { //
-  int firstChild;         // pointer to the first element node
-  int count;              // how many nodes exist -1 if not a leaf
-} quad_node_t;
-
-typedef struct quadTree {
-  quad_node_t *nodes;             // List of all the children in the tree
-  quad_element_node_t *elemNodes; // list of the element nodes
-  quad_element_t *elements;       // List all of the quads of the tree
-  Rectangle root;                 // Original Rectangle
-  int freeNode;                   // first free node in the tree
-
-} quad_tree_t;
-
-bool insertParticle(quad_tree_t *tree, quad_node_t *node, Rectangle bounds,
-                    Vector2 *position, int idx, int depth) {
-
-  if (node == NULL) {
-    printf("Error Null node dont know how this happend?\n");
-    return false;
-  }
-  if (!CheckCollisionPointRec(position[idx],
-                              bounds)) { // If not in the rectangle then
-                                         // dont insert the particle
-    return false;
-  }
-
-  if (depth > MAX_TREE_DEPTH) {
-
-    return true;
-  }
-
-  if (node->firstChild == -1) {
-    int add = tree->freeNode;
-    for(int i = 0; i < 4; i++){
-        tree->nodes[tree->freeNode + i].firstChild = -1;
-        tree->nodes[tree->freeNode + i].count = -1;
-        tree->freeNode++;
-    }
-
-     node->firstChild = add; // set to tree->freeNode - 5 eventually
-    
-  }
-
-  if (position[idx].x < bounds.x + bounds.width / 2 &&
-      position[idx].y < bounds.y + bounds.height / 2) {
-    // would have returned if it was not within
-    // bounds so we only have to check where in
-    // the bounds it is Upper left
-
-    return insertParticle(
-        tree, tree->nodes + node->firstChild,
-        (Rectangle){bounds.x, bounds.y, bounds.width / 2, bounds.height / 2},
-        position, idx, depth++);
-  }
-  if (position[idx].x > bounds.x + bounds.width / 2 &&
-      position[idx].y < bounds.y + bounds.height / 2) {
-    // would have returned if it was not within bounds so we
-    // only have to check where in the bounds it is
-    // Upper right
-    return insertParticle(tree, tree->nodes + node->firstChild + 1,
-                          (Rectangle){bounds.x + bounds.width / 2, bounds.y,
-                                      bounds.width / 2, bounds.height / 2},
-                          position, idx, depth++);
-  }
-  if (position[idx].x < bounds.x + bounds.width / 2 &&
-      position[idx].y > bounds.y + bounds.height / 2) {
-    // would have returned if it was not within
-    // bounds so we only have to check where in
-    // the bounds it is Lower left
-    return insertParticle(tree, tree->nodes + node->firstChild + 2,
-                          (Rectangle){bounds.x, bounds.y + bounds.height / 2,
-                                      bounds.width / 2, bounds.height / 2},
-                          position, idx, depth++);
-  }
-  if (position[idx].x > bounds.x + bounds.width / 2 &&
-      position[idx].y > bounds.y + bounds.height / 2) {
-    // would have returned if it was not within
-    // bounds so we only have to check where in
-    // the bounds it is Lower left
-    return insertParticle(tree, tree->nodes + node->firstChild + 3,
-                          (Rectangle){bounds.x + bounds.width / 2,
-                                      bounds.y + bounds.height / 2,
-                                      bounds.width / 2, bounds.height / 2},
-                          position, idx, depth++);
-  }
-
-  return false;
-}
 
 void CollideWithWalls(Vector2 *position, Vector2 *velocity, float dt) {
   if (position->x + velocity->x * dt < 0 ||
@@ -132,7 +32,11 @@ void CollideWithWalls(Vector2 *position, Vector2 *velocity, float dt) {
   }
 }
 
-void CollideWithParticles(Particles *particles, int currentIdx, float dt) {
+void CollideWithParticles(Particles *particles, tree_root_t *root,
+                          int currentIdx, float dt) {
+
+  int *nearbyParticles = NULL;
+
   for (int i = 0; i < POPULATION; i++) {
     if (i == currentIdx) {
       continue;
@@ -185,10 +89,11 @@ void CollideWithParticles(Particles *particles, int currentIdx, float dt) {
   }
 }
 
-void UpdateParticles(Particles *particles, float dt) {
+void UpdateParticles(Particles *particles, tree_root_t *root, float dt) {
+
   for (int i = 0; i < POPULATION; i++) {
     CollideWithWalls(&(particles->position[i]), &(particles->velocity[i]), dt);
-    CollideWithParticles(particles, i, dt);
+    CollideWithParticles(particles, root, i, dt);
 
     particles->position[i] = Vector2Add(
         particles->position[i], Vector2Scale(particles->velocity[i], dt));
@@ -220,6 +125,10 @@ int main(void) {
     particles.color[i] = (i < 10) ? RED : BLUE;
   }
 
+  tree_root_t root;
+
+  InitTree(&root, SCREEN_WIDTH, SCREEN_HEIGHT);
+
   float deltaTime = GetFrameTime();
 
   if (deltaTime <= 0) {
@@ -231,20 +140,61 @@ int main(void) {
     float subDT = deltaTime / SUB_STEPS;
 
     for (int i = 0; i < SUB_STEPS; i++) {
-      UpdateParticles(&particles, subDT);
+      ResetTree(&root);
+
+      for (int i = 0; i < POPULATION; i++) {
+        InsertElementTree(&root, particles.position[i].x,
+                          particles.position[i].y, i);
+      }
+      UpdateParticles(&particles, &root, subDT);
     }
+
+    /* for (int i = 0; i < root.nodeNum; i++) {
+       printf(" %i : %i \n", root.nodes[i].idx, root.nodes[i].elementIdx);
+     }
+     */
 
     BeginDrawing();
     ClearBackground(RAYWHITE);
     DrawFPS(10, 10);
-
+    for (int i = 0; i < root.nodeNum; i++) {
+      if (root.nodes[i].elementIdx != -1) {
+        DrawRectangleLines(root.nodes[i].rect.x, root.nodes[i].rect.y,
+                           root.nodes[i].rect.w, root.nodes[i].rect.h, GREEN);
+      }
+    }
     for (int i = 0; i < POPULATION; i++) {
       DrawCircleV(particles.position[i], particles.radius[i],
                   particles.color[i]);
     }
 
+    int mouse_x = 500;
+    int mouse_y = 500;
+    aabb_t query_rect = (aabb_t){mouse_x - 200, mouse_y - 200, 400, 400};
+    int *results = (int *)malloc(sizeof(int) * root.nodeNum);
+
+    DrawRectangle(query_rect.x, query_rect.y, query_rect.w, query_rect.h,
+                  BLACK);
+
+    int size = GetElementsInRect(&root, query_rect, results);
+    printf("size : %i\n", size);
+    if (results) {
+      for (int i = 1; i < size; i++) {
+        printf("%i : %i at : %f, %f\n", i, results[i], particles.position[results[i]].x, particles.position[results[i]].y);
+        if (CheckCollisionPointAABB(particles.position[results[i]].x,
+                                    particles.position[results[i]].y,
+                                    query_rect)) {
+          DrawCircleV(particles.position[results[i]], 10, YELLOW);
+        } else {
+          DrawCircleV(particles.position[results[i]], 10, BLACK);
+        }
+      }
+      free(results);
+    }
     EndDrawing();
   }
+
+  CleanUpTree(&root);
 
   CloseWindow();
 
