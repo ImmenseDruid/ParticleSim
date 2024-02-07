@@ -31,8 +31,8 @@ typedef struct root {
 bool CheckCollisionPointAABB(float x, float y, aabb_t box);
 void InitNode(tree_node_t *node, int idx, aabb_t rect);
 void SplitNode(tree_root_t *root, tree_node_t *node);
-void InsertElement(tree_root_t *root, int nodeIdx, float x, float y,
-                   int idx, int depth);
+void InsertElement(tree_root_t *root, int nodeIdx, float x, float y, int idx,
+                   int depth);
 void InsertElementTree(tree_root_t *root, float x, float y, int idx);
 void ResetTree(tree_root_t *root);
 void CleanUpTree(tree_root_t *root) { free(root->nodes); }
@@ -83,57 +83,60 @@ void SplitNode(tree_root_t *root, tree_node_t *node) {
   node->childIdx = root->nodeNum;
   int x = node->rect.x;
   int y = node->rect.y;
-  int w = node->rect.w >> 1;
-  int h = node->rect.h >> 1; // hmmmmm
-  InitNode(root->nodes + node->childIdx, node->childIdx, (aabb_t){x, y, w, h});
+  int w = node->rect.w >> 1; // half of current rect
+  int h = node->rect.h >> 1; // half of current rect
+  InitNode(root->nodes + node->childIdx, node->childIdx,
+           (aabb_t){x, y, w, h}); // init upper left
   InitNode(root->nodes + node->childIdx + 1, node->childIdx + 1,
-           (aabb_t){x + w, y, w, h});
+           (aabb_t){x + w, y, w, h}); // init upper right
   InitNode(root->nodes + node->childIdx + 2, node->childIdx + 2,
-           (aabb_t){x, y + h, w, h});
+           (aabb_t){x, y + h, w, h}); // init lower left
   InitNode(root->nodes + node->childIdx + 3, node->childIdx + 3,
-           (aabb_t){x + w, y + h, w, h});
-  node->childrenNum = 4;
-  root->nodeNum += 4;
+           (aabb_t){x + w, y + h, w, h}); // init lower right
+  node->childrenNum = 4;                  // add 4 children
+  root->nodeNum += 4;                     // increase node number by 4
 }
 
-void InsertElement(tree_root_t *root, int nodeIdx, float x, float y,
-                   int idx, int depth) {
+void InsertElement(tree_root_t *root, int nodeIdx, float x, float y, int idx,
+                   int depth) {
 
-  if (root->nodes[nodeIdx].elementIdx == -1) {
+  if (root->nodes[nodeIdx].elementIdx == -1) { // if current node is empty
     // printf("Adding element : %i to node %i \n", idx, node->idx);
     root->nodes[nodeIdx].elementIdx = idx;
     return;
-  } else if (root->nodes[nodeIdx].childIdx > root->nodeNum) {
-    printf("Somehow the child idx is bigger than the amount of nodes\n");
-
-  } else if (root->nodes[nodeIdx].childIdx < -1) {
-    printf("Somehow the child idx is smaller than -1\n");
   } else {
+    // if we have very deep tree return (base case)
     if (depth > root->depth) {
       return;
     }
 
-    if (root->nodes[nodeIdx].childrenNum == -1) {
+    if (root->nodes[nodeIdx].childrenNum == -1) { // if no children split
       // Sub divide node
       if (root->nodeNum + 4 > root->nodeCapacity) {
+        // if node number is greater than node capacity then double capacity
         root->nodeCapacity <<= 1;
+        // reallocate proper amount of memory for the new capacity
         root->nodes = (tree_node_t *)realloc(
             root->nodes, root->nodeCapacity * sizeof(tree_node_t));
         //  memset(root->nodes + root->nodeNum, 0,
         //        sizeof(tree_node_t) * (root->nodeCapacity >> 1));
       }
-      if (root->nodes[nodeIdx].rect.w > 5 && root->nodes[nodeIdx].rect.h > 5) {
+      if (root->nodes[nodeIdx].rect.w > 1 &&
+          root->nodes[nodeIdx].rect.h > 1) { // if big enough
         SplitNode(root, root->nodes + nodeIdx);
       }
     }
 
     for (int j = 0; j < root->nodes[nodeIdx].childrenNum; j++) {
-      if (root->nodes[nodeIdx].childIdx + j > root->nodeNum) {
-        printf("Hi I broke, %i / %i, %i\n", root->nodes[nodeIdx].childIdx, root->nodeCapacity,
-               j);
+      if (root->nodes[nodeIdx].childIdx + j >
+          root->nodeNum) { // should never trigger but just in case
+        printf("Hi I broke, %i / %i, %i\n", root->nodes[nodeIdx].childIdx,
+               root->nodeCapacity, j);
         break;
       }
-      if (CheckCollisionPointAABB(x, y, root->nodes[root->nodes[nodeIdx].childIdx + j].rect)) {
+      if (CheckCollisionPointAABB(
+              x, y, root->nodes[root->nodes[nodeIdx].childIdx + j].rect)) {
+        // if point is inside aabb of child add to that child
         InsertElement(root, root->nodes[nodeIdx].childIdx + j, x, y, idx,
                       depth + 1);
       }
@@ -157,7 +160,6 @@ int GetElementsInRect(tree_root_t *root, aabb_t rect, int *result) {
   node_queue[nodes_size] = 0;
   nodes_size++;
 
-  memset(result, -1, sizeof(int) * root->nodeNum);
   int results_size = 0;
 
   while (nodes_size > 0) { // create breadth first search

@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-const int POPULATION = 100;
+const int POPULATION = 1000;
 
 const int SCREEN_WIDTH = 1000;
 const int SCREEN_HEIGHT = 1000;
@@ -101,6 +101,7 @@ void UpdateParticles(Particles *particles, tree_root_t *root, float dt,
 
   for (int i = 0; i < POPULATION; i++) {
     CollideWithWalls(&(particles->position[i]), &(particles->velocity[i]), dt);
+    memset(nearbyParticles, -1, POPULATION * sizeof(int));
     CollideWithParticles(particles, root, i, dt, nearbyParticles);
 
     particles->position[i] = Vector2Add(
@@ -155,17 +156,16 @@ int main(void) {
         InsertElementTree(&root, particles.position[i].x,
                           particles.position[i].y, i);
       }
-      memset(nearbyParticles, 0, POPULATION * sizeof(int));
       UpdateParticles(&particles, &root, subDT, nearbyParticles);
     }
 
     BeginDrawing();
     ClearBackground(RAYWHITE);
     DrawFPS(10, 10);
-    for (int i = 0; i < root.nodeNum; i++) {
+   /* for (int i = 0; i < root.nodeNum; i++) {
       DrawRectangleLines(root.nodes[i].rect.x, root.nodes[i].rect.y,
                          root.nodes[i].rect.w, root.nodes[i].rect.h, GREEN);
-    }
+    }*/
     for (int i = 0; i < POPULATION; i++) {
       DrawCircleV(particles.position[i], particles.radius[i],
                   particles.color[i]);
