@@ -33,22 +33,28 @@ void CollideWithWalls(Vector2 *position, Vector2 *velocity, float dt) {
 }
 
 void CollideWithParticles(Particles *particles, tree_root_t *root,
-                          int currentIdx, float dt) {
+                          int currentIdx, float dt, int *nearbyParticles) {
 
-  int *nearbyParticles = NULL;
+  aabb_t particle_rect =
+      (aabb_t){particles->position[currentIdx].x - 25,
+               particles->position[currentIdx].y - 25, 50, 50};
 
-  for (int i = 0; i < POPULATION; i++) {
-    if (i == currentIdx) {
+  int size = GetElementsInRect(root, particle_rect, nearbyParticles);
+
+  for (int i = 0; i < size; i++) {
+    if (nearbyParticles[i] == currentIdx) {
       continue;
     }
 
-    float dist = Vector2Length(Vector2Subtract(
-        particles->position[i], particles->position[currentIdx]));
+    float dist =
+        Vector2Length(Vector2Subtract(particles->position[nearbyParticles[i]],
+                                      particles->position[currentIdx]));
 
-    if (dist < particles->radius[currentIdx] + particles->radius[i]) {
+    if (dist <
+        particles->radius[currentIdx] + particles->radius[nearbyParticles[i]]) {
       // Collide
       Vector2 p1 = particles->position[currentIdx];
-      Vector2 p2 = particles->position[i];
+      Vector2 p2 = particles->position[nearbyParticles[i]];
       Vector2 pdir; // Just in case the 2 particles somehow make it exactly
                     // ontop of one another
       if (Vector2LengthSqr(Vector2Subtract(p2, p1)) == 0) {
@@ -56,44 +62,46 @@ void CollideWithParticles(Particles *particles, tree_root_t *root,
       } else {
         pdir = Vector2Normalize(Vector2Subtract(p2, p1));
       }
-      float distMove = ((particles->radius[i] + particles->radius[currentIdx]) -
+      float distMove = ((particles->radius[nearbyParticles[i]] +
+                         particles->radius[currentIdx]) -
                         Vector2Length(Vector2Subtract(p2, p1))) /
                        2;
       p1 = Vector2Add(Vector2Scale(pdir, -distMove), p1);
       p2 = Vector2Add(Vector2Scale(pdir, distMove), p2);
 
       Vector2 v1 = particles->velocity[currentIdx];
-      Vector2 v2 = particles->velocity[i];
+      Vector2 v2 = particles->velocity[nearbyParticles[i]];
       Vector2 v1f = Vector2Subtract(
-          v1,
-          Vector2Scale(Vector2Subtract(p1, p2),
-                       (2 * particles->mass[i]) /
-                           (particles->mass[currentIdx] + particles->mass[i]) *
-                           Vector2DotProduct(Vector2Subtract(v1, v2),
-                                             Vector2Subtract(p1, p2)) /
-                           Vector2LengthSqr(Vector2Subtract(p1, p2))));
+          v1, Vector2Scale(Vector2Subtract(p1, p2),
+                           (2 * particles->mass[nearbyParticles[i]]) /
+                               (particles->mass[currentIdx] +
+                                particles->mass[nearbyParticles[i]]) *
+                               Vector2DotProduct(Vector2Subtract(v1, v2),
+                                                 Vector2Subtract(p1, p2)) /
+                               Vector2LengthSqr(Vector2Subtract(p1, p2))));
       Vector2 v2f = Vector2Subtract(
-          v2,
-          Vector2Scale(Vector2Subtract(p2, p1),
-                       (2 * particles->mass[currentIdx]) /
-                           (particles->mass[i] + particles->mass[currentIdx]) *
-                           Vector2DotProduct(Vector2Subtract(v2, v1),
-                                             Vector2Subtract(p2, p1)) /
-                           Vector2LengthSqr(Vector2Subtract(p2, p1))));
+          v2, Vector2Scale(Vector2Subtract(p2, p1),
+                           (2 * particles->mass[currentIdx]) /
+                               (particles->mass[nearbyParticles[i]] +
+                                particles->mass[currentIdx]) *
+                               Vector2DotProduct(Vector2Subtract(v2, v1),
+                                                 Vector2Subtract(p2, p1)) /
+                               Vector2LengthSqr(Vector2Subtract(p2, p1))));
 
       particles->position[currentIdx] = p1;
-      particles->position[i] = p2;
+      particles->position[nearbyParticles[i]] = p2;
       particles->velocity[currentIdx] = v1f;
-      particles->velocity[i] = v2f;
+      particles->velocity[nearbyParticles[i]] = v2f;
     }
   }
 }
 
-void UpdateParticles(Particles *particles, tree_root_t *root, float dt) {
+void UpdateParticles(Particles *particles, tree_root_t *root, float dt,
+                     int *nearbyParticles) {
 
   for (int i = 0; i < POPULATION; i++) {
     CollideWithWalls(&(particles->position[i]), &(particles->velocity[i]), dt);
-    CollideWithParticles(particles, root, i, dt);
+    CollideWithParticles(particles, root, i, dt, nearbyParticles);
 
     particles->position[i] = Vector2Add(
         particles->position[i], Vector2Scale(particles->velocity[i], dt));
@@ -105,6 +113,7 @@ int main(void) {
   SetTargetFPS(30);
 
   Particles particles;
+  int *nearbyParticles = (int *)malloc(sizeof(int) * POPULATION);
 
   particles.position = (Vector2 *)malloc(sizeof(Vector2) * POPULATION);
   particles.velocity = (Vector2 *)malloc(sizeof(Vector2) * POPULATION);
@@ -146,53 +155,26 @@ int main(void) {
         InsertElementTree(&root, particles.position[i].x,
                           particles.position[i].y, i);
       }
-      UpdateParticles(&particles, &root, subDT);
+      memset(nearbyParticles, 0, POPULATION * sizeof(int));
+      UpdateParticles(&particles, &root, subDT, nearbyParticles);
     }
-
-    /* for (int i = 0; i < root.nodeNum; i++) {
-       printf(" %i : %i \n", root.nodes[i].idx, root.nodes[i].elementIdx);
-     }
-     */
 
     BeginDrawing();
     ClearBackground(RAYWHITE);
     DrawFPS(10, 10);
     for (int i = 0; i < root.nodeNum; i++) {
-      if (root.nodes[i].elementIdx != -1) {
-        DrawRectangleLines(root.nodes[i].rect.x, root.nodes[i].rect.y,
-                           root.nodes[i].rect.w, root.nodes[i].rect.h, GREEN);
-      }
+      DrawRectangleLines(root.nodes[i].rect.x, root.nodes[i].rect.y,
+                         root.nodes[i].rect.w, root.nodes[i].rect.h, GREEN);
     }
     for (int i = 0; i < POPULATION; i++) {
       DrawCircleV(particles.position[i], particles.radius[i],
                   particles.color[i]);
     }
 
-    int mouse_x = 500;
-    int mouse_y = 500;
-    aabb_t query_rect = (aabb_t){mouse_x - 200, mouse_y - 200, 400, 400};
-    int *results = (int *)malloc(sizeof(int) * root.nodeNum);
-
-    DrawRectangle(query_rect.x, query_rect.y, query_rect.w, query_rect.h,
-                  BLACK);
-
-    int size = GetElementsInRect(&root, query_rect, results);
-    printf("size : %i\n", size);
-    if (results) {
-      for (int i = 1; i < size; i++) {
-        printf("%i : %i at : %f, %f\n", i, results[i], particles.position[results[i]].x, particles.position[results[i]].y);
-        if (CheckCollisionPointAABB(particles.position[results[i]].x,
-                                    particles.position[results[i]].y,
-                                    query_rect)) {
-          DrawCircleV(particles.position[results[i]], 10, YELLOW);
-        } else {
-          DrawCircleV(particles.position[results[i]], 10, BLACK);
-        }
-      }
-      free(results);
-    }
     EndDrawing();
   }
+
+  free(nearbyParticles);
 
   CleanUpTree(&root);
 

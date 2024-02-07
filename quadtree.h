@@ -31,7 +31,7 @@ typedef struct root {
 bool CheckCollisionPointAABB(float x, float y, aabb_t box);
 void InitNode(tree_node_t *node, int idx, aabb_t rect);
 void SplitNode(tree_root_t *root, tree_node_t *node);
-void InsertElement(tree_root_t *root, tree_node_t *node, float x, float y,
+void InsertElement(tree_root_t *root, int nodeIdx, float x, float y,
                    int idx, int depth);
 void InsertElementTree(tree_root_t *root, float x, float y, int idx);
 void ResetTree(tree_root_t *root);
@@ -57,7 +57,7 @@ bool CheckCollisionAABBS(aabb_t b1, aabb_t b2) {
 }
 
 void InitTree(tree_root_t *root, int width, int height) {
-  root->depth = 10;
+  root->depth = 50;
   root->nodes = (tree_node_t *)calloc(40, sizeof(tree_node_t));
   root->bounds = (aabb_t){0, 0, width, height};
   root->nodeNum = 1;
@@ -96,45 +96,45 @@ void SplitNode(tree_root_t *root, tree_node_t *node) {
   root->nodeNum += 4;
 }
 
-void InsertElement(tree_root_t *root, tree_node_t *node, float x, float y,
+void InsertElement(tree_root_t *root, int nodeIdx, float x, float y,
                    int idx, int depth) {
 
-  if (node->elementIdx == -1) {
+  if (root->nodes[nodeIdx].elementIdx == -1) {
     // printf("Adding element : %i to node %i \n", idx, node->idx);
-    node->elementIdx = idx;
+    root->nodes[nodeIdx].elementIdx = idx;
     return;
-  } // else if (node->childIdx > root->nodeNum) {
-  //   printf("Somehow the child idx is bigger than the amount of nodes\n");
+  } else if (root->nodes[nodeIdx].childIdx > root->nodeNum) {
+    printf("Somehow the child idx is bigger than the amount of nodes\n");
 
-  // } else if (node->childIdx < -1) {
-  //   printf("Somehow the child idx is smaller than -1\n");
-  // }
-  else {
+  } else if (root->nodes[nodeIdx].childIdx < -1) {
+    printf("Somehow the child idx is smaller than -1\n");
+  } else {
     if (depth > root->depth) {
       return;
     }
 
-    if (node->childrenNum == -1) {
+    if (root->nodes[nodeIdx].childrenNum == -1) {
       // Sub divide node
       if (root->nodeNum + 4 > root->nodeCapacity) {
         root->nodeCapacity <<= 1;
         root->nodes = (tree_node_t *)realloc(
             root->nodes, root->nodeCapacity * sizeof(tree_node_t));
-        memset(root->nodes + root->nodeNum, 0,
-               sizeof(tree_node_t) * (root->nodeCapacity >> 1));
+        //  memset(root->nodes + root->nodeNum, 0,
+        //        sizeof(tree_node_t) * (root->nodeCapacity >> 1));
       }
-      if (node->rect.w > 5 && node->rect.h > 5) {
-        SplitNode(root, node);
+      if (root->nodes[nodeIdx].rect.w > 5 && root->nodes[nodeIdx].rect.h > 5) {
+        SplitNode(root, root->nodes + nodeIdx);
       }
     }
 
-    for (int j = 0; j < node->childrenNum; j++) {
-      if (node->childIdx + j > root->nodeNum) {
-        printf("Hi I broke\n");
+    for (int j = 0; j < root->nodes[nodeIdx].childrenNum; j++) {
+      if (root->nodes[nodeIdx].childIdx + j > root->nodeNum) {
+        printf("Hi I broke, %i / %i, %i\n", root->nodes[nodeIdx].childIdx, root->nodeCapacity,
+               j);
         break;
       }
-      if (CheckCollisionPointAABB(x, y, root->nodes[node->childIdx + j].rect)) {
-        InsertElement(root, &root->nodes[node->childIdx + j], x, y, idx,
+      if (CheckCollisionPointAABB(x, y, root->nodes[root->nodes[nodeIdx].childIdx + j].rect)) {
+        InsertElement(root, root->nodes[nodeIdx].childIdx + j, x, y, idx,
                       depth + 1);
       }
     }
@@ -143,7 +143,7 @@ void InsertElement(tree_root_t *root, tree_node_t *node, float x, float y,
 
 void InsertElementTree(tree_root_t *root, float x, float y, int idx) {
   if (CheckCollisionPointAABB(x, y, root->nodes[0].rect)) {
-    InsertElement(root, root->nodes, x, y, idx, 0);
+    InsertElement(root, 0, x, y, idx, 0);
   }
 }
 
@@ -152,7 +152,7 @@ int GetElementsInRect(tree_root_t *root, aabb_t rect, int *result) {
   memset(node_queue, -1, sizeof(int) * root->nodeNum);
   // Maximum amount of nodes
   int nodes_size = 0;
-  int nodes_capacity = root->nodeNum;
+  // int nodes_capacity = root->nodeNum;
 
   node_queue[nodes_size] = 0;
   nodes_size++;
@@ -183,6 +183,7 @@ int GetElementsInRect(tree_root_t *root, aabb_t rect, int *result) {
     nodes_size--;
   }
 
+  free(node_queue);
+
   return results_size;
 }
-
